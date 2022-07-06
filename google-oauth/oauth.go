@@ -6,8 +6,10 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -19,6 +21,11 @@ import (
 )
 
 func main() {
+	var (
+		tokenOutput io.Writer                            = os.Stdout
+		tokenFmt    func(io.Writer, *oauth2.Token) error = txtFmt
+	)
+
 	c := oauth2.Config{
 		Scopes: []string{"https://mail.google.com/"},
 	}
@@ -27,7 +34,21 @@ func main() {
 	flag.StringVar(&c.Endpoint.AuthURL, "auth-url", "https://accounts.google.com/o/oauth2/v2/auth", "Auth URL")
 	flag.StringVar(&c.Endpoint.TokenURL, "token-url", "https://oauth2.googleapis.com/token", "Token URL")
 	flag.Var(Comma{Var: &c.Scopes}, "scope", "Scopes")
+	useJson := flag.Bool("json", false, "Output json")
+	output := flag.String("out", "", "File output, defaults to standard output")
 	flag.Parse()
+
+	if *useJson {
+		tokenFmt = jsonFmt
+	}
+	if *output != "" {
+		if f, err := os.Create(*output); err != nil {
+			log.Fatal(err)
+		} else {
+			defer f.Close()
+			tokenOutput = f
+		}
+	}
 
 	verifier := genVerifier()
 	state := "state"
@@ -49,10 +70,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("\nAccessToken: %s\n", tok.AccessToken)
-		fmt.Printf("TokenType: %s\n", tok.TokenType)
-		fmt.Printf("RefreshToken: %s\n", tok.RefreshToken)
-		fmt.Printf("Expiry: %s\n", tok.Expiry)
+		if err := tokenFmt(tokenOutput, tok); err != nil {
+			log.Fatal(err)
+		}
 		os.Exit(0)
 	})
 
@@ -70,6 +90,22 @@ func main() {
 		}
 	} else {
 		log.Fatal(err)
+	}
+}
+
+func txtFmt(w io.Writer, tok *oauth2.Token) error {
+	fmt.Fprintf(w, "\nAccessToken: %s\n", tok.AccessToken)
+	fmt.Fprintf(w, "TokenType: %s\n", tok.TokenType)
+	fmt.Fprintf(w, "RefreshToken: %s\n", tok.RefreshToken)
+	fmt.Fprintf(w, "Expiry: %s\n", tok.Expiry)
+	return nil
+}
+
+func jsonFmt(w io.Writer, tok *oauth2.Token) error {
+	if doc, err := json.Marshal(tok); err != nil {
+		return err
+	} else {
+		return w.Write(doc)
 	}
 }
 
