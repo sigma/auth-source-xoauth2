@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -54,12 +55,22 @@ func main() {
 		fmt.Printf("Expiry: %s\n", tok.Expiry)
 		os.Exit(0)
 	})
-	c.RedirectURL = "http://127.0.0.1:8181"
-	url := c.AuthCodeURL(state, oauth2.AccessTypeOffline,
-		oauth2.SetAuthURLParam("code_challenge", verifier),
-		oauth2.SetAuthURLParam("code_challenge_method", "plain"))
-	fmt.Printf("Visit the URL for the auth dialog: %v\n", url)
-	http.ListenAndServe("127.0.0.1:8181", nil)
+
+	if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
+		addr := l.Addr().String()
+		c.RedirectURL = fmt.Sprintf("http://%s", addr)
+
+		url := c.AuthCodeURL(state, oauth2.AccessTypeOffline,
+			oauth2.SetAuthURLParam("code_challenge", verifier),
+			oauth2.SetAuthURLParam("code_challenge_method", "plain"))
+		fmt.Printf("Visit the URL for the auth dialog: %v\n", url)
+
+		if err := http.Serve(l, nil); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Fatal(err)
+	}
 }
 
 func genVerifier() string {
